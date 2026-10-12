@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Entry, Kind, KIND_LABEL } from "@/lib/types";
+import { ENERGY_NEEDS, Entry, FOCUS_NEEDS, Kind, KIND_LABEL, timeLabel } from "@/lib/types";
+import RightNow from "@/components/RightNow";
 
 type Row = Entry & { steps: { id: string; done: boolean }[] };
 type Filter = "all" | Kind;
@@ -130,6 +131,8 @@ export default function Home() {
         </div>
       </form>
 
+      <RightNow rows={rows} />
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {(["all", "idea", "project", "list"] as Filter[]).map((f) => (
           <button
@@ -207,8 +210,19 @@ export default function Home() {
                     <div className="h-full bg-hot-pink" style={{ width: `${(done / total) * 100}%` }} />
                   </div>
                 )}
+                {(r.minutes != null || r.energy || r.focus) && (
+                  <p className="mt-2 text-xs text-ink-soft">
+                    {[
+                      r.minutes != null ? timeLabel(r.minutes) : null,
+                      r.energy ? ENERGY_NEEDS[r.energy] : null,
+                      r.focus ? FOCUS_NEEDS[r.focus] : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
                 {r.tags.length > 0 && (
-                  <p className="mt-2 text-xs text-muted-purple">{r.tags.map((t) => `#${t}`).join(" ")}</p>
+                  <p className="mt-1 text-xs text-muted-purple">{r.tags.map((t) => `#${t}`).join(" ")}</p>
                 )}
               </Link>
             </li>
