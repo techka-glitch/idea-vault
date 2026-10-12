@@ -3,7 +3,20 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Entry, Kind, KIND_LABEL, Status, Step } from "@/lib/types";
+import {
+  ENERGY_NEEDS,
+  Entry,
+  FOCUS_NEEDS,
+  Kind,
+  KIND_LABEL,
+  Level,
+  LEVELS,
+  Status,
+  Step,
+  SUGGESTED_TAGS,
+  TIME_OPTIONS,
+  timeLabel,
+} from "@/lib/types";
 
 const json = { "Content-Type": "application/json" };
 
@@ -56,6 +69,18 @@ export default function EntryDetail({ id }: { id: string }) {
 
   async function setKind(kind: Kind) {
     if (await patch({ kind })) setEntry((e) => (e ? { ...e, kind } : e));
+  }
+
+  async function setSize(field: "minutes" | "energy" | "focus", value: number | Level | null) {
+    if (!entry) return;
+    const next = entry[field] === value ? null : value;
+    if (await patch({ [field]: next })) setEntry({ ...entry, [field]: next });
+  }
+
+  async function addTagValue(t: string) {
+    if (!entry || entry.tags.includes(t)) return;
+    const tags = [...entry.tags, t];
+    if (await patch({ tags })) setEntry({ ...entry, tags });
   }
 
   async function addTags(e: React.FormEvent) {
@@ -166,6 +191,56 @@ export default function EntryDetail({ id }: { id: string }) {
         className="card-shadow mb-5 w-full rounded-2xl bg-white p-4 text-base outline-none"
       />
 
+      {entry.kind !== "list" && (
+        <div className="card-shadow mb-5 rounded-2xl bg-pale-teal p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            How big is one sitting? (optional)
+          </p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {TIME_OPTIONS.map((m) => (
+              <button
+                key={m}
+                onClick={() => setSize("minutes", m)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  entry.minutes === m ? "bg-teal text-white" : "bg-white text-ink-soft"
+                }`}
+              >
+                {timeLabel(m)}
+              </button>
+            ))}
+          </div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Energy it takes</p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {LEVELS.map((l) => (
+              <button
+                key={l}
+                onClick={() => setSize("energy", l)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  entry.energy === l ? "bg-teal text-white" : "bg-white text-ink-soft"
+                }`}
+              >
+                {ENERGY_NEEDS[l]}
+              </button>
+            ))}
+          </div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Focus it takes</p>
+          <div className="flex flex-wrap gap-2">
+            {LEVELS.map((l) => (
+              <button
+                key={l}
+                onClick={() => setSize("focus", l)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  entry.focus === l ? "bg-teal text-white" : "bg-white text-ink-soft"
+                }`}
+              >
+                {FOCUS_NEEDS[l]}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted-purple">Tap a choice again to clear it.</p>
+        </div>
+      )}
+
       <h2 className="script-accent mb-2 text-2xl">{entry.kind === "list" ? "items" : "what's left"}</h2>
       <ul className="mb-3 space-y-2">
         {remaining.map((s) => (
@@ -197,6 +272,17 @@ export default function EntryDetail({ id }: { id: string }) {
         {entry.tags.map((t) => (
           <button key={t} onClick={() => removeTag(t)} className="rounded-full bg-pale-teal px-3 py-1 text-xs" title="Tap to remove">
             #{t} ×
+          </button>
+        ))}
+      </div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {SUGGESTED_TAGS.filter((t) => !entry.tags.includes(t)).map((t) => (
+          <button
+            key={t}
+            onClick={() => addTagValue(t)}
+            className="rounded-full border border-pale-teal bg-white px-3 py-1 text-xs text-ink-soft"
+          >
+            + {t}
           </button>
         ))}
       </div>
