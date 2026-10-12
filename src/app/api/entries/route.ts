@@ -5,7 +5,7 @@ export async function GET() {
   const db = getSupabaseServerClient();
   const { data, error } = await db
     .from("entries")
-    .select("*, steps(id, done)")
+    .select("*, steps(*)")
     .order("updated_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ entries: data });

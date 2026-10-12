@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ENERGY_NEEDS, Entry, FOCUS_NEEDS, Kind, KIND_LABEL, timeLabel } from "@/lib/types";
+import { ENERGY_NEEDS, Entry, FOCUS_NEEDS, Kind, KIND_LABEL, Level, LEVELS, Step, timeLabel } from "@/lib/types";
 import RightNow from "@/components/RightNow";
 
-type Row = Entry & { steps: { id: string; done: boolean }[] };
+type Row = Entry & { steps: Step[] };
 type Filter = "all" | Kind;
 
 export default function Home() {
@@ -16,6 +16,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [tag, setTag] = useState<string | null>(null);
+  const [energyF, setEnergyF] = useState<Level | null>(null);
+  const [focusF, setFocusF] = useState<Level | null>(null);
   const [showParked, setShowParked] = useState(false);
   const [q, setQ] = useState("");
   const [title, setTitle] = useState("");
@@ -41,20 +43,38 @@ export default function Home() {
 
   const allTags = useMemo(() => {
     const counts = new Map<string, number>();
-    rows.forEach((r) => r.tags.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1)));
+    rows.forEach((r) => {
+      // Each tag counts once per project, whether it sits on the project or on one of its items.
+      const all = new Set([...r.tags, ...r.steps.flatMap((s) => s.tags ?? [])]);
+      all.forEach((t) => counts.set(t, (counts.get(t) ?? 0) + 1));
+    });
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([t]) => t);
   }, [rows]);
+
+  // An open item matches the energy and focus filters when it asks for exactly those levels.
+  const stepHit = useCallback(
+    (s: Step) => !s.done && (!energyF || s.energy === energyF) && (!focusF || s.focus === focusF),
+    [energyF, focusF],
+  );
 
   const visible = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return rows.filter((r) => {
       if (filter !== "all" && r.kind !== filter) return false;
-      if (tag && !r.tags.includes(tag)) return false;
+      if (energyF || focusF) {
+        const wholeHit = (!energyF || r.energy === energyF) && (!focusF || r.focus === focusF);
+        if (!wholeHit && !r.steps.some(stepHit)) return false;
+      }
+      if (tag && !r.tags.includes(tag) && !r.steps.some((s) => (s.tags ?? []).includes(tag))) return false;
       if (!showParked && r.status !== "active") return false;
-      if (needle && !(r.title + " " + r.notes + " " + r.tags.join(" ")).toLowerCase().includes(needle)) return false;
+      if (needle) {
+        const stepText = r.steps.map((s) => s.text + " " + (s.tags ?? []).join(" ")).join(" ");
+        const haystack = (r.title + " " + r.notes + " " + r.tags.join(" ") + " " + stepText).toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
       return true;
     });
-  }, [rows, filter, tag, showParked, q]);
+  }, [rows, filter, tag, showParked, q, energyF, focusF, stepHit]);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -153,6 +173,35 @@ export default function Home() {
         </button>
       </div>
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Energy it takes</span>
+        {LEVELS.map((l) => (
+          <button
+            key={l}
+            onClick={() => setEnergyF(energyF === l ? null : l)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+              energyF === l ? "bg-teal text-white" : "bg-white text-ink-soft"
+            }`}
+          >
+            {ENERGY_NEEDS[l]}
+          </button>
+        ))}
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Focus it takes</span>
+        {LEVELS.map((l) => (
+          <button
+            key={l}
+            onClick={() => setFocusF(focusF === l ? null : l)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+              focusF === l ? "bg-teal text-white" : "bg-white text-ink-soft"
+            }`}
+          >
+            {FOCUS_NEEDS[l]}
+          </button>
+        ))}
+      </div>
+
       {allTags.length > 0 && (
         <div className="mb-3 flex flex-wrap gap-2">
           {allTags.map((t) => (
@@ -223,6 +272,13 @@ export default function Home() {
                 )}
                 {r.tags.length > 0 && (
                   <p className="mt-1 text-xs text-muted-purple">{r.tags.map((t) => `#${t}`).join(" ")}</p>
+                )}
+                {(energyF || focusF) && r.steps.some(stepHit) && (
+                  <ul className="mt-2 space-y-1 border-t border-pale-pink pt-2">
+                    {r.steps.filter(stepHit).map((s) => (
+                      <li key={s.id} className="text-sm text-ink-soft">• {s.text}</li>
+                    ))}
+                  </ul>
                 )}
               </Link>
             </li>

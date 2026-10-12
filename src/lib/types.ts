@@ -10,6 +10,8 @@ export type Step = {
   position: number;
   minutes: number | null;
   tags: string[];
+  energy: Level | null;
+  focus: Level | null;
 };
 
 export type Entry = {

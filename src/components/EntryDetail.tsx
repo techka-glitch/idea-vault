@@ -20,6 +20,14 @@ import {
 
 const json = { "Content-Type": "application/json" };
 
+type StepChange = {
+  text?: string;
+  minutes?: number | null;
+  tags?: string[];
+  energy?: Level | null;
+  focus?: Level | null;
+};
+
 export default function EntryDetail({ id }: { id: string }) {
   const router = useRouter();
   const [entry, setEntry] = useState<Entry | null>(null);
@@ -158,7 +166,7 @@ export default function EntryDetail({ id }: { id: string }) {
     }
   }
 
-  async function updateStep(step: Step, change: { text?: string; minutes?: number | null; tags?: string[] }) {
+  async function updateStep(step: Step, change: StepChange) {
     const before = step;
     setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, ...change } : x)));
     const res = await fetch(`/api/steps/${step.id}`, { method: "PATCH", headers: json, body: JSON.stringify(change) });
@@ -394,7 +402,7 @@ function StepRow({
   step: Step;
   onToggle: (s: Step) => void;
   onRemove: (s: Step) => void;
-  onUpdate: (s: Step, change: { text?: string; minutes?: number | null; tags?: string[] }) => void;
+  onUpdate: (s: Step, change: StepChange) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tagText, setTagText] = useState("");
@@ -443,9 +451,11 @@ function StepRow({
         </button>
       </div>
 
-      {!open && (step.minutes || tags.length > 0) && (
+      {!open && (step.minutes || step.energy || step.focus || tags.length > 0) && (
         <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
           {step.minutes && <span className="rounded-full bg-teal px-2.5 py-0.5 text-xs font-semibold text-white">{timeLabel(step.minutes)}</span>}
+          {step.energy && <span className="rounded-full bg-pale-pink px-2.5 py-0.5 text-xs">{ENERGY_NEEDS[step.energy]}</span>}
+          {step.focus && <span className="rounded-full bg-pale-pink px-2.5 py-0.5 text-xs">{FOCUS_NEEDS[step.focus]}</span>}
           {tags.map((t) => (
             <span key={t} className="rounded-full bg-pale-teal px-2.5 py-0.5 text-xs">#{t}</span>
           ))}
@@ -478,6 +488,38 @@ function StepRow({
                   }`}
                 >
                   {timeLabel(m)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Energy it takes</p>
+            <div className="flex flex-wrap gap-2">
+              {LEVELS.map((l) => (
+                <button
+                  key={l}
+                  onClick={() => onUpdate(step, { energy: step.energy === l ? null : l })}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    step.energy === l ? "bg-teal text-white" : "bg-pale-teal text-ink-soft"
+                  }`}
+                >
+                  {ENERGY_NEEDS[l]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Focus it takes</p>
+            <div className="flex flex-wrap gap-2">
+              {LEVELS.map((l) => (
+                <button
+                  key={l}
+                  onClick={() => onUpdate(step, { focus: step.focus === l ? null : l })}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    step.focus === l ? "bg-teal text-white" : "bg-pale-teal text-ink-soft"
+                  }`}
+                >
+                  {FOCUS_NEEDS[l]}
                 </button>
               ))}
             </div>

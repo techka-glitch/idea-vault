@@ -8,15 +8,29 @@ import {
   ENERGY_NEEDS,
   FOCUS_HAVE,
   FOCUS_NEEDS,
+  Kind,
   KIND_LABEL,
   Level,
   LEVELS,
   LEVEL_RANK,
+  Step,
   TIME_OPTIONS,
   timeLabel,
 } from "@/lib/types";
 
-type Row = Entry & { steps: { id: string; done: boolean }[] };
+type Row = Entry & { steps: Step[] };
+
+// Something the picker can suggest: a whole idea or project, or a single open item inside one.
+type Candidate = {
+  key: string;
+  entryId: string;
+  title: string;
+  parent: string | null;
+  kind: Kind | null;
+  minutes: number | null;
+  energy: Level | null;
+  focus: Level | null;
+};
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -41,9 +55,37 @@ export default function RightNow({ rows }: { rows: Row[] }) {
   const [asked, setAsked] = useState(false);
 
   const { sized, unsized } = useMemo(() => {
-    const candidates = rows.filter((r) => r.status === "active" && r.kind !== "list");
-    const energyOk = (r: Row) => !energy || !r.energy || LEVEL_RANK[r.energy] <= LEVEL_RANK[energy];
-    const focusOk = (r: Row) => !focus || !r.focus || LEVEL_RANK[r.focus] <= LEVEL_RANK[focus];
+    const active = rows.filter((r) => r.status === "active");
+    const wholes: Candidate[] = active
+      .filter((r) => r.kind !== "list")
+      .map((r) => ({
+        key: r.id,
+        entryId: r.id,
+        title: r.title,
+        parent: null,
+        kind: r.kind,
+        minutes: r.minutes,
+        energy: r.energy,
+        focus: r.focus,
+      }));
+    // Open items only count once they have some size set, so unsized items don't flood the picker.
+    const items: Candidate[] = active.flatMap((r) =>
+      (r.steps ?? [])
+        .filter((s) => !s.done && (s.minutes != null || s.energy || s.focus))
+        .map((s) => ({
+          key: s.id,
+          entryId: r.id,
+          title: s.text,
+          parent: r.title,
+          kind: null,
+          minutes: s.minutes ?? null,
+          energy: s.energy ?? null,
+          focus: s.focus ?? null,
+        })),
+    );
+    const candidates = [...wholes, ...items];
+    const energyOk = (r: Candidate) => !energy || !r.energy || LEVEL_RANK[r.energy] <= LEVEL_RANK[energy];
+    const focusOk = (r: Candidate) => !focus || !r.focus || LEVEL_RANK[r.focus] <= LEVEL_RANK[focus];
     const fits = candidates.filter((r) => energyOk(r) && focusOk(r));
     return {
       sized: fits.filter((r) => r.minutes != null && (time == null || r.minutes <= time)),
@@ -135,9 +177,10 @@ export default function RightNow({ rows }: { rows: Row[] }) {
             <p className="mb-2 text-xs text-muted-purple">Nothing sized fits, so here is one with no size set yet.</p>
           )}
           <span className="rounded-full bg-pale-sage px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-            {KIND_LABEL[pick.kind]}
+            {pick.kind ? KIND_LABEL[pick.kind] : "Item"}
           </span>
           <p className="mt-2 font-heading text-xl font-semibold leading-snug">{pick.title}</p>
+          {pick.parent && <p className="mt-1 text-xs text-ink-soft">From: {pick.parent}</p>}
           <p className="mt-1 text-xs text-ink-soft">
             {[
               pick.minutes != null ? timeLabel(pick.minutes) : null,
@@ -148,7 +191,7 @@ export default function RightNow({ rows }: { rows: Row[] }) {
               .join(" · ")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Link href={`/e/${pick.id}`} className="rounded-xl bg-teal px-4 py-2 text-sm font-semibold text-white">
+            <Link href={`/e/${pick.entryId}`} className="rounded-xl bg-teal px-4 py-2 text-sm font-semibold text-white">
               Let&apos;s do this one
             </Link>
             {pool.length > 1 && (
