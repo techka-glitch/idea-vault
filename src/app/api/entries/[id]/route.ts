@@ -24,6 +24,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if (typeof body.notes === "string") patch.notes = body.notes;
   if (["idea", "project", "list"].includes(body.kind)) patch.kind = body.kind;
   if (["active", "done", "parked"].includes(body.status)) patch.status = body.status;
+  if (body.minutes === null || (Number.isInteger(body.minutes) && body.minutes > 0)) patch.minutes = body.minutes;
+  if (body.energy === null || ["low", "medium", "high"].includes(body.energy)) patch.energy = body.energy;
+  if (body.focus === null || ["low", "medium", "high"].includes(body.focus)) patch.focus = body.focus;
   if (Array.isArray(body.tags)) {
     patch.tags = body.tags
       .filter((t: unknown) => typeof t === "string")
