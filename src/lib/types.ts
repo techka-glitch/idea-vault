@@ -8,6 +8,8 @@ export type Step = {
   text: string;
   done: boolean;
   position: number;
+  minutes: number | null;
+  tags: string[];
 };
 
 export type Entry = {
