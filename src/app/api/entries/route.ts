@@ -17,7 +17,12 @@ export async function POST(req: NextRequest) {
   const kind = ["idea", "project", "list"].includes(body?.kind) ? body.kind : "idea";
   if (!title) return NextResponse.json({ error: "Title required" }, { status: 400 });
   const db = getSupabaseServerClient();
-  const { data, error } = await db.from("entries").insert({ title, kind }).select().single();
+  const levels = ["low", "medium", "high"];
+  const row: Record<string, unknown> = { title, kind };
+  if (Number.isInteger(body?.minutes) && body.minutes > 0) row.minutes = body.minutes;
+  if (levels.includes(body?.energy)) row.energy = body.energy;
+  if (levels.includes(body?.focus)) row.focus = body.focus;
+  const { data, error } = await db.from("entries").insert(row).select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ entry: data });
 }
