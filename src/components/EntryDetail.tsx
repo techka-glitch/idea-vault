@@ -31,6 +31,7 @@ export default function EntryDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pending = useRef<{ title?: string; notes?: string }>({});
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/entries/${id}`, { cache: "no-store" });
@@ -57,11 +58,44 @@ export default function EntryDetail({ id }: { id: string }) {
     return res.ok;
   }
 
+  // Title and notes edits are merged so a quick edit to one never cancels the other.
+  async function flushSave() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const body = pending.current;
+    if (!Object.keys(body).length) {
+      setSaved(true);
+      return;
+    }
+    pending.current = {};
+    const ok = await patch(body);
+    if (!ok) {
+      pending.current = { ...body, ...pending.current };
+      return;
+    }
+    if (body.title) {
+      const savedTitle = body.title.trim();
+      setEntry((e) => (e ? { ...e, title: savedTitle } : e));
+    }
+  }
+
   function queueSave(next: { title?: string; notes?: string }) {
     setSaved(false);
+    pending.current = { ...pending.current, ...next };
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => patch(next), 700);
+    saveTimer.current = setTimeout(flushSave, 700);
   }
+
+  // Leaving the page within a moment of typing should not lose the edit.
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      const body = pending.current;
+      if (Object.keys(body).length) {
+        fetch(`/api/entries/${id}`, { method: "PATCH", headers: json, body: JSON.stringify(body), keepalive: true });
+      }
+    };
+  }, [id]);
 
   async function setStatus(status: Status) {
     if (await patch({ status })) setEntry((e) => (e ? { ...e, status } : e));
@@ -124,7 +158,7 @@ export default function EntryDetail({ id }: { id: string }) {
     }
   }
 
-  async function updateStep(step: Step, change: { minutes?: number | null; tags?: string[] }) {
+  async function updateStep(step: Step, change: { text?: string; minutes?: number | null; tags?: string[] }) {
     const before = step;
     setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, ...change } : x)));
     const res = await fetch(`/api/steps/${step.id}`, { method: "PATCH", headers: json, body: JSON.stringify(change) });
@@ -181,13 +215,32 @@ export default function EntryDetail({ id }: { id: string }) {
         ))}
       </div>
 
+      <label htmlFor="entry-title" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted-purple">
+        Title (tap to rename)
+      </label>
       <input
+        id="entry-title"
         value={title}
+        placeholder="Give this a title"
         onChange={(e) => {
-          setTitle(e.target.value);
-          queueSave({ title: e.target.value });
+          const next = e.target.value;
+          setTitle(next);
+          if (next.trim()) queueSave({ title: next });
+          else {
+            // An empty title is never saved; the last good one comes back when you leave the box.
+            const { title: _discard, ...rest } = pending.current;
+            void _discard;
+            pending.current = rest;
+          }
         }}
-        className="mb-3 w-full bg-transparent font-heading text-2xl font-semibold outline-none"
+        onBlur={() => {
+          if (!title.trim()) setTitle(entry.title);
+          flushSave();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="mb-3 w-full rounded-xl border border-pale-pink bg-white px-3 py-2 font-heading text-2xl font-semibold outline-none focus:border-hot-pink"
       />
 
       <textarea
@@ -341,11 +394,22 @@ function StepRow({
   step: Step;
   onToggle: (s: Step) => void;
   onRemove: (s: Step) => void;
-  onUpdate: (s: Step, change: { minutes?: number | null; tags?: string[] }) => void;
+  onUpdate: (s: Step, change: { text?: string; minutes?: number | null; tags?: string[] }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tagText, setTagText] = useState("");
+  const [text, setText] = useState(step.text);
   const tags = step.tags ?? [];
+
+  function saveText() {
+    const next = text.trim();
+    if (!next) {
+      setText(step.text);
+      return;
+    }
+    if (next !== step.text) onUpdate(step, { text: next });
+    setText(next);
+  }
 
   function addTags(e: React.FormEvent) {
     e.preventDefault();
@@ -372,7 +436,7 @@ function StepRow({
           className="shrink-0 text-xs font-semibold text-hot-pink"
           aria-expanded={open}
         >
-          {open ? "Done" : step.minutes || tags.length ? "Edit" : "+ time / tags"}
+          {open ? "Done" : "Edit"}
         </button>
         <button onClick={() => onRemove(step)} className="text-lg leading-none text-muted-purple" aria-label="Remove">
           ×
@@ -390,6 +454,18 @@ function StepRow({
 
       {open && (
         <div className="mt-3 space-y-3 pl-8">
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Name</p>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onBlur={saveText}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              className="w-full rounded-xl border border-deep-pale-pink bg-white px-3 py-2 text-base outline-none focus:border-hot-pink"
+            />
+          </div>
           <div>
             <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">How long (optional)</p>
             <div className="flex flex-wrap gap-2">
