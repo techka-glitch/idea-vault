@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+:root {
+  --background: #fff8f4;
+  --foreground: #1b1c2a;
+
+  --hot-pink: #eb518f;
+  --soft-pink: #ff7bac;
+  --pale-pink: #fcebf0;
+  --deep-pale-pink: #fadcea;
+  --teal: #6fa9b0;
+  --pale-teal: #ceeae7;
+  --sage: #b5c688;
+  --pale-sage: #cedbbc;
+  --gold: #f7c76c;
+  --muted-purple: #988ea0;
+  --ink: #1b1c2a;
+  --ink-soft: #3a3b47;
+  --cream: #fff8f4;
+
+  --rainbow-gradient: linear-gradient(
+    135deg,
+    #eb518f,
+    #ff7bac,
+    #f7c76c,
+    #b5c688,
+    #6fa9b0
+  );
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-hot-pink: var(--hot-pink);
+  --color-soft-pink: var(--soft-pink);
+  --color-pale-pink: var(--pale-pink);
+  --color-deep-pale-pink: var(--deep-pale-pink);
+  --color-teal: var(--teal);
+  --color-pale-teal: var(--pale-teal);
+  --color-sage: var(--sage);
+  --color-pale-sage: var(--pale-sage);
+  --color-gold: var(--gold);
+  --color-muted-purple: var(--muted-purple);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-cream: var(--cream);
+  --font-sans: var(--font-montserrat);
+  --font-heading: var(--font-playfair);
+  --font-script: var(--font-caveat);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-montserrat), Arial, Helvetica, sans-serif;
+}
+
+.script-accent {
+  font-family: var(--font-caveat), cursive;
+  color: var(--hot-pink);
+  transform: rotate(-1.5deg);
+  display: inline-block;
+}
+
+.rainbow-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--rainbow-gradient);
+}
+
+.card-shadow {
+  box-shadow:
+    0 10px 24px rgba(111, 169, 176, 0.16),
+    0 6px 16px rgba(235, 81, 143, 0.12);
+}
