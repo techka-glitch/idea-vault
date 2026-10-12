@@ -124,6 +124,16 @@ export default function EntryDetail({ id }: { id: string }) {
     }
   }
 
+  async function updateStep(step: Step, change: { minutes?: number | null; tags?: string[] }) {
+    const before = step;
+    setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, ...change } : x)));
+    const res = await fetch(`/api/steps/${step.id}`, { method: "PATCH", headers: json, body: JSON.stringify(change) });
+    if (!res.ok) {
+      setSteps((s) => s.map((x) => (x.id === step.id ? before : x)));
+      setError("Could not save that.");
+    }
+  }
+
   async function removeStep(step: Step) {
     setSteps((s) => s.filter((x) => x.id !== step.id));
     await fetch(`/api/steps/${step.id}`, { method: "DELETE" });
@@ -244,7 +254,7 @@ export default function EntryDetail({ id }: { id: string }) {
       <h2 className="script-accent mb-2 text-2xl">{entry.kind === "list" ? "items" : "what's left"}</h2>
       <ul className="mb-3 space-y-2">
         {remaining.map((s) => (
-          <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} />
+          <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} onUpdate={updateStep} />
         ))}
       </ul>
       <form onSubmit={addStep} className="mb-5 flex gap-2">
@@ -262,7 +272,7 @@ export default function EntryDetail({ id }: { id: string }) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-purple">Done</p>
           <ul className="mb-5 space-y-2">
             {finished.map((s) => (
-              <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} />
+              <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} onUpdate={updateStep} />
             ))}
           </ul>
         </>
@@ -326,25 +336,111 @@ function StepRow({
   step,
   onToggle,
   onRemove,
+  onUpdate,
 }: {
   step: Step;
   onToggle: (s: Step) => void;
   onRemove: (s: Step) => void;
+  onUpdate: (s: Step, change: { minutes?: number | null; tags?: string[] }) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [tagText, setTagText] = useState("");
+  const tags = step.tags ?? [];
+
+  function addTags(e: React.FormEvent) {
+    e.preventDefault();
+    const incoming = tagText.split(/[,\s]+/).map((t) => t.replace(/^#/, "").toLowerCase()).filter(Boolean);
+    if (!incoming.length) return;
+    onUpdate(step, { tags: [...new Set([...tags, ...incoming])] });
+    setTagText("");
+  }
+
   return (
-    <li className="flex items-center gap-3 rounded-xl bg-white px-3 py-3">
-      <input
-        type="checkbox"
-        checked={step.done}
-        onChange={() => onToggle(step)}
-        className="h-5 w-5 shrink-0 accent-[#eb518f]"
-      />
-      <span className={`min-w-0 flex-1 break-words text-base ${step.done ? "text-muted-purple line-through" : ""}`}>
-        {step.text}
-      </span>
-      <button onClick={() => onRemove(step)} className="text-lg leading-none text-muted-purple" aria-label="Remove">
-        ×
-      </button>
+    <li className="rounded-xl bg-white px-3 py-3">
+      <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          checked={step.done}
+          onChange={() => onToggle(step)}
+          className="h-5 w-5 shrink-0 accent-[#eb518f]"
+        />
+        <span className={`min-w-0 flex-1 break-words text-base ${step.done ? "text-muted-purple line-through" : ""}`}>
+          {step.text}
+        </span>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="shrink-0 text-xs font-semibold text-hot-pink"
+          aria-expanded={open}
+        >
+          {open ? "Done" : step.minutes || tags.length ? "Edit" : "+ time / tags"}
+        </button>
+        <button onClick={() => onRemove(step)} className="text-lg leading-none text-muted-purple" aria-label="Remove">
+          ×
+        </button>
+      </div>
+
+      {!open && (step.minutes || tags.length > 0) && (
+        <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
+          {step.minutes && <span className="rounded-full bg-teal px-2.5 py-0.5 text-xs font-semibold text-white">{timeLabel(step.minutes)}</span>}
+          {tags.map((t) => (
+            <span key={t} className="rounded-full bg-pale-teal px-2.5 py-0.5 text-xs">#{t}</span>
+          ))}
+        </div>
+      )}
+
+      {open && (
+        <div className="mt-3 space-y-3 pl-8">
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">How long (optional)</p>
+            <div className="flex flex-wrap gap-2">
+              {TIME_OPTIONS.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => onUpdate(step, { minutes: step.minutes === m ? null : m })}
+                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    step.minutes === m ? "bg-teal text-white" : "bg-pale-teal text-ink-soft"
+                  }`}
+                >
+                  {timeLabel(m)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Tags</p>
+            <div className="mb-2 flex flex-wrap gap-2">
+              {tags.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => onUpdate(step, { tags: tags.filter((x) => x !== t) })}
+                  className="rounded-full bg-pale-teal px-3 py-1 text-xs"
+                  title="Tap to remove"
+                >
+                  #{t} ×
+                </button>
+              ))}
+              {SUGGESTED_TAGS.filter((t) => !tags.includes(t)).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => onUpdate(step, { tags: [...tags, t] })}
+                  className="rounded-full border border-pale-teal bg-white px-3 py-1 text-xs text-ink-soft"
+                >
+                  + {t}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={addTags} className="flex gap-2">
+              <input
+                value={tagText}
+                onChange={(e) => setTagText(e.target.value)}
+                placeholder="Add tags (errand, call, buy)"
+                className="min-w-0 flex-1 rounded-xl border border-deep-pale-pink bg-white px-3 py-2 text-base outline-none focus:border-hot-pink"
+              />
+              <button className="rounded-xl bg-ink px-4 text-sm font-semibold text-white">Tag</button>
+            </form>
+          </div>
+        </div>
+      )}
     </li>
   );
 }
