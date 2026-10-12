@@ -1,0 +1,37 @@
+name: Weekly database backup
+
+# Saves a copy of every table as JSON files you can download from the run page
+# (Actions tab > this workflow > a run > Artifacts). Copies are kept for 90 days.
+# Needs four repository secrets: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_ANON_KEY,
+# IDEAS_DB_EMAIL and IDEAS_DB_PASSWORD.
+
+on:
+  schedule:
+    - cron: "43 9 * * 0"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Export tables
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          IDEAS_DB_EMAIL: ${{ secrets.IDEAS_DB_EMAIL }}
+          IDEAS_DB_PASSWORD: ${{ secrets.IDEAS_DB_PASSWORD }}
+        run: node scripts/backup-supabase.mjs backup
+
+      - name: Save the backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: idea-vault-db-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 90
+          if-no-files-found: error
