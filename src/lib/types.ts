@@ -1,6 +1,8 @@
-export type Kind = "idea" | "project" | "list";
+export type Kind = "idea" | "project" | "list" | "action";
 export type Status = "active" | "done" | "parked";
 export type Level = "low" | "medium" | "high";
+export type StepType = "independent" | "sequential" | "same_session";
+export type Priority = "low" | "normal" | "high";
 
 export type Step = {
   id: string;
@@ -12,6 +14,15 @@ export type Step = {
   tags: string[];
   energy: Level | null;
   focus: Level | null;
+  minutes_max: number | null;
+  step_type: StepType;
+  session_group: string | null;
+  wait_minutes: number | null;
+  repeatable: boolean;
+  times_done: number;
+  also_in: string[];
+  due_date: string | null;
+  heads_up: string | null;
 };
 
 export type Entry = {
@@ -24,6 +35,10 @@ export type Entry = {
   minutes: number | null;
   energy: Level | null;
   focus: Level | null;
+  minutes_max: number | null;
+  priority: Priority | null;
+  due_date: string | null;
+  heads_up: string | null;
   created_at: string;
   updated_at: string;
   steps?: Step[];
@@ -33,16 +48,59 @@ export const KIND_LABEL: Record<Kind, string> = {
   idea: "Idea",
   project: "Project",
   list: "List",
+  action: "Action",
+};
+
+export const STEP_TYPE_LABEL: Record<StepType, string> = {
+  independent: "Anytime",
+  sequential: "In order",
+  same_session: "Same session",
 };
 
 export const LEVELS: Level[] = ["low", "medium", "high"];
-export const TIME_OPTIONS = [5, 15, 30, 60, 120];
-export const SUGGESTED_TAGS = ["fun", "creative", "house", "diy", "garden"];
+export const TIME_OPTIONS = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180];
+export const SUGGESTED_TAGS = [
+  "house",
+  "kitchen",
+  "declutter",
+  "organize",
+  "pets",
+  "creative",
+  "joy",
+  "crafts",
+  "watercolor",
+  "embroidery",
+  "business",
+  "busylooksgood",
+  "recipes",
+  "freezer",
+  "family",
+  "maintenance",
+];
 
 export function timeLabel(m: number): string {
-  if (m >= 120) return "2 hrs+";
+  if (m >= 180) return "3+ hrs";
+  if (m === 120) return "2 hrs";
   if (m === 60) return "1 hr";
   return `${m} min`;
+}
+
+// A time estimate, or a range when one was given. Always an estimate, never exact.
+export function estimateLabel(min: number | null, max: number | null): string | null {
+  if (min == null) return null;
+  if (max == null || max <= min) return timeLabel(min);
+  if (min % 60 === 0 && max % 60 === 0 && min >= 60) return `${min / 60} to ${max / 60} hrs`;
+  return `${min} to ${max} min`;
+}
+
+export function waitLabel(m: number): string {
+  if (m >= 60 && m % 60 === 0) return `${m / 60} hr${m === 60 ? "" : "s"}`;
+  return `${m} min`;
+}
+
+export function dueLabel(d: string): string {
+  const dt = new Date(`${d}T12:00:00`);
+  return dt.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
 }
 
 // What an entry asks of you.

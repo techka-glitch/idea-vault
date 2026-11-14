@@ -3,34 +3,19 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  Entry,
+  dueLabel,
   ENERGY_HAVE,
   ENERGY_NEEDS,
+  estimateLabel,
   FOCUS_HAVE,
   FOCUS_NEEDS,
-  Kind,
   KIND_LABEL,
   Level,
   LEVELS,
-  LEVEL_RANK,
-  Step,
   TIME_OPTIONS,
-  timeLabel,
+  waitLabel,
 } from "@/lib/types";
-
-type Row = Entry & { steps: Step[] };
-
-// Something the picker can suggest: a whole idea or project, or a single open item inside one.
-type Candidate = {
-  key: string;
-  entryId: string;
-  title: string;
-  parent: string | null;
-  kind: Kind | null;
-  minutes: number | null;
-  energy: Level | null;
-  focus: Level | null;
-};
+import { buildCandidates, fitting, Mood, Row } from "@/lib/picker";
 
 function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
@@ -46,55 +31,29 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-export default function RightNow({ rows }: { rows: Row[] }) {
+export default function RightNow({ rows, tags }: { rows: Row[]; tags: string[] }) {
   const [open, setOpen] = useState(false);
   const [time, setTime] = useState<number | null>(null);
   const [energy, setEnergy] = useState<Level | null>(null);
   const [focus, setFocus] = useState<Level | null>(null);
+  const [tag, setTag] = useState<string | null>(null);
+  const [mood, setMood] = useState<Mood>(null);
   const [pickIndex, setPickIndex] = useState(0);
   const [asked, setAsked] = useState(false);
 
-  const { sized, unsized } = useMemo(() => {
-    const active = rows.filter((r) => r.status === "active");
-    const wholes: Candidate[] = active
-      .filter((r) => r.kind !== "list")
-      .map((r) => ({
-        key: r.id,
-        entryId: r.id,
-        title: r.title,
-        parent: null,
-        kind: r.kind,
-        minutes: r.minutes,
-        energy: r.energy,
-        focus: r.focus,
-      }));
-    // Open items only count once they have some size set, so unsized items don't flood the picker.
-    const items: Candidate[] = active.flatMap((r) =>
-      (r.steps ?? [])
-        .filter((s) => !s.done && (s.minutes != null || s.energy || s.focus))
-        .map((s) => ({
-          key: s.id,
-          entryId: r.id,
-          title: s.text,
-          parent: r.title,
-          kind: null,
-          minutes: s.minutes ?? null,
-          energy: s.energy ?? null,
-          focus: s.focus ?? null,
-        })),
-    );
-    const candidates = [...wholes, ...items];
-    const energyOk = (r: Candidate) => !energy || !r.energy || LEVEL_RANK[r.energy] <= LEVEL_RANK[energy];
-    const focusOk = (r: Candidate) => !focus || !r.focus || LEVEL_RANK[r.focus] <= LEVEL_RANK[focus];
-    const fits = candidates.filter((r) => energyOk(r) && focusOk(r));
-    return {
-      sized: fits.filter((r) => r.minutes != null && (time == null || r.minutes <= time)),
-      unsized: fits.filter((r) => r.minutes == null),
-    };
-  }, [rows, time, energy, focus]);
+  const candidates = useMemo(() => buildCandidates(rows), [rows]);
+  const { sized, unsized } = useMemo(
+    () => fitting(candidates, { time, energy, focus, tag, mood }),
+    [candidates, time, energy, focus, tag, mood],
+  );
 
   const pool = sized.length > 0 ? sized : unsized;
   const pick = asked && pool.length > 0 ? pool[pickIndex % pool.length] : null;
+
+  function change(fn: () => void) {
+    fn();
+    setAsked(false);
+  }
 
   function choose() {
     setAsked(true);
@@ -111,6 +70,8 @@ export default function RightNow({ rows }: { rows: Row[] }) {
     setTime(null);
     setEnergy(null);
     setFocus(null);
+    setTag(null);
+    setMood(null);
   }
 
   if (!open) {
@@ -125,6 +86,8 @@ export default function RightNow({ rows }: { rows: Row[] }) {
     );
   }
 
+  const estimate = pick ? estimateLabel(pick.minutes, pick.minutesMax) : null;
+
   return (
     <div className="card-shadow mb-5 rounded-3xl bg-pale-teal p-4">
       <div className="mb-3 flex items-center justify-between">
@@ -134,11 +97,21 @@ export default function RightNow({ rows }: { rows: Row[] }) {
         </button>
       </div>
 
+      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">What are you in the mood for?</p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <Chip active={mood === "create"} onClick={() => change(() => setMood(mood === "create" ? null : "create"))}>
+          I feel like creating
+        </Chip>
+        <Chip active={mood === "do"} onClick={() => change(() => setMood(mood === "do" ? null : "do"))}>
+          I feel like getting things done
+        </Chip>
+      </div>
+
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">How much time?</p>
       <div className="mb-3 flex flex-wrap gap-2">
         {TIME_OPTIONS.map((m) => (
-          <Chip key={m} active={time === m} onClick={() => { setTime(time === m ? null : m); setAsked(false); }}>
-            {timeLabel(m)}
+          <Chip key={m} active={time === m} onClick={() => change(() => setTime(time === m ? null : m))}>
+            {estimateLabel(m, null)}
           </Chip>
         ))}
       </div>
@@ -146,20 +119,33 @@ export default function RightNow({ rows }: { rows: Row[] }) {
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">How is your energy?</p>
       <div className="mb-3 flex flex-wrap gap-2">
         {LEVELS.map((l) => (
-          <Chip key={l} active={energy === l} onClick={() => { setEnergy(energy === l ? null : l); setAsked(false); }}>
+          <Chip key={l} active={energy === l} onClick={() => change(() => setEnergy(energy === l ? null : l))}>
             {ENERGY_HAVE[l]}
           </Chip>
         ))}
       </div>
 
       <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">How is your focus?</p>
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         {LEVELS.map((l) => (
-          <Chip key={l} active={focus === l} onClick={() => { setFocus(focus === l ? null : l); setAsked(false); }}>
+          <Chip key={l} active={focus === l} onClick={() => change(() => setFocus(focus === l ? null : l))}>
             {FOCUS_HAVE[l]}
           </Chip>
         ))}
       </div>
+
+      {tags.length > 0 && (
+        <>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Just this kind of thing</p>
+          <div className="mb-4 flex flex-wrap gap-2">
+            {tags.map((t) => (
+              <Chip key={t} active={tag === t} onClick={() => change(() => setTag(tag === t ? null : t))}>
+                #{t}
+              </Chip>
+            ))}
+          </div>
+        </>
+      )}
 
       <button onClick={choose} className="mb-3 w-full rounded-xl bg-hot-pink px-4 py-3 text-sm font-semibold text-white">
         Pick something for me
@@ -167,7 +153,7 @@ export default function RightNow({ rows }: { rows: Row[] }) {
 
       {asked && !pick && (
         <p className="text-sm text-ink-soft">
-          Nothing is sized for that yet. Open an idea and add a time, energy or focus level, and it will show up here.
+          Nothing matches that yet. Try more time, or open an idea and add a time, energy or focus level.
         </p>
       )}
 
@@ -177,19 +163,28 @@ export default function RightNow({ rows }: { rows: Row[] }) {
             <p className="mb-2 text-xs text-muted-purple">Nothing sized fits, so here is one with no size set yet.</p>
           )}
           <span className="rounded-full bg-pale-sage px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
-            {pick.kind ? KIND_LABEL[pick.kind] : "Item"}
+            {pick.sessionSteps > 0 ? "Same session" : pick.kind ? KIND_LABEL[pick.kind] : "Item"}
           </span>
           <p className="mt-2 font-heading text-xl font-semibold leading-snug">{pick.title}</p>
           {pick.parent && <p className="mt-1 text-xs text-ink-soft">From: {pick.parent}</p>}
           <p className="mt-1 text-xs text-ink-soft">
             {[
-              pick.minutes != null ? timeLabel(pick.minutes) : null,
+              estimate ? (pick.sessionSteps > 0 ? `about ${estimate} of work` : estimate) : null,
+              pick.waitMinutes ? `plus ${waitLabel(pick.waitMinutes)} waiting` : null,
               pick.energy ? ENERGY_NEEDS[pick.energy] : null,
               pick.focus ? FOCUS_NEEDS[pick.focus] : null,
+              pick.repeatable ? (pick.timesDone > 0 ? `repeatable, ${pick.timesDone} done so far` : "repeatable") : null,
+              pick.dueDate ? `due ${dueLabel(pick.dueDate)}` : null,
             ]
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {pick.sessionSteps > 0 && (
+            <p className="mt-1 text-xs text-muted-purple">
+              {pick.sessionSteps} steps that work best done together. Estimates are rough and editable.
+            </p>
+          )}
+          {pick.headsUp && <p className="mt-2 rounded-xl bg-gold px-3 py-2 text-xs font-semibold">{pick.headsUp}</p>}
           <div className="mt-3 flex flex-wrap gap-2">
             <Link href={`/e/${pick.entryId}`} className="rounded-xl bg-teal px-4 py-2 text-sm font-semibold text-white">
               Let&apos;s do this one

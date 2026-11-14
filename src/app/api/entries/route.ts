@@ -14,7 +14,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const title = typeof body?.title === "string" ? body.title.trim() : "";
-  const kind = ["idea", "project", "list"].includes(body?.kind) ? body.kind : "idea";
+  const kind = ["idea", "project", "list", "action"].includes(body?.kind) ? body.kind : "idea";
   if (!title) return NextResponse.json({ error: "Title required" }, { status: 400 });
   const db = getSupabaseServerClient();
   const levels = ["low", "medium", "high"];

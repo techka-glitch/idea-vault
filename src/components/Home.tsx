@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ENERGY_NEEDS, Entry, FOCUS_NEEDS, Kind, KIND_LABEL, Level, LEVELS, Step, timeLabel } from "@/lib/types";
+import { dueLabel, ENERGY_NEEDS, estimateLabel, FOCUS_NEEDS, Kind, KIND_LABEL, Level, LEVELS, Step } from "@/lib/types";
 import RightNow from "@/components/RightNow";
-
-type Row = Entry & { steps: Step[] };
+import { buildCandidates, Row } from "@/lib/picker";
 type Filter = "all" | Kind;
 
 export default function Home() {
@@ -23,6 +22,7 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<Kind>("idea");
   const [adding, setAdding] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch("/api/entries", { cache: "no-store" });
@@ -94,11 +94,34 @@ export default function Home() {
     await load();
   }
 
+  // Steps that live in another project but are also needed in this one, so progress counts them too.
+  const sharedByEntry = useMemo(() => {
+    const map = new Map<string, Step[]>();
+    rows.forEach((r) =>
+      r.steps.forEach((s) =>
+        (s.also_in ?? []).forEach((id) => map.set(id, [...(map.get(id) ?? []), s])),
+      ),
+    );
+    return map;
+  }, [rows]);
+
+  // Surprise me only picks things you could actually do, and respects the filters on screen.
   function surprise() {
-    const pool = rows.filter((r) => r.status === "active" && r.kind !== "list");
-    if (pool.length === 0) return;
+    const shown = new Set(visible.map((r) => r.id));
+    const pool = buildCandidates(rows).filter(
+      (c) =>
+        shown.has(c.entryId) &&
+        (!tag || c.tags.includes(tag)) &&
+        (!energyF || c.energy === energyF) &&
+        (!focusF || c.focus === focusF),
+    );
+    if (pool.length === 0) {
+      setNote("Nothing doable matches those filters right now.");
+      return;
+    }
+    setNote(null);
     const pick = pool[Math.floor(Math.random() * pool.length)];
-    router.push(`/e/${pick.id}`);
+    router.push(`/e/${pick.entryId}`);
   }
 
   async function signOut() {
@@ -129,7 +152,7 @@ export default function Home() {
           className="mb-3 w-full rounded-xl border border-pale-pink px-3 py-3 text-base outline-none focus:border-hot-pink"
         />
         <div className="flex items-center gap-2">
-          {(["idea", "project", "list"] as Kind[]).map((k) => (
+          {(["idea", "project", "action", "list"] as Kind[]).map((k) => (
             <button
               type="button"
               key={k}
@@ -151,10 +174,10 @@ export default function Home() {
         </div>
       </form>
 
-      <RightNow rows={rows} />
+      <RightNow rows={rows} tags={allTags} />
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        {(["all", "idea", "project", "list"] as Filter[]).map((f) => (
+        {(["all", "idea", "project", "action", "list"] as Filter[]).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -226,12 +249,14 @@ export default function Home() {
       />
 
       {error && <p className="mb-3 text-sm text-hot-pink">{error}</p>}
+      {note && <p className="mb-3 text-sm text-ink-soft">{note}</p>}
       {loading && <p className="text-sm text-ink-soft">Loading...</p>}
 
       <ul className="space-y-3">
         {visible.map((r) => {
-          const total = r.steps.length;
-          const done = r.steps.filter((s) => s.done).length;
+          const mine = [...r.steps, ...(sharedByEntry.get(r.id) ?? [])];
+          const total = mine.length;
+          const done = mine.filter((s) => s.done).length;
           return (
             <li key={r.id}>
               <Link
@@ -259,12 +284,14 @@ export default function Home() {
                     <div className="h-full bg-hot-pink" style={{ width: `${(done / total) * 100}%` }} />
                   </div>
                 )}
-                {(r.minutes != null || r.energy || r.focus) && (
+                {(r.minutes != null || r.energy || r.focus || r.due_date || r.priority === "high") && (
                   <p className="mt-2 text-xs text-ink-soft">
                     {[
-                      r.minutes != null ? timeLabel(r.minutes) : null,
+                      estimateLabel(r.minutes, r.minutes_max ?? null),
                       r.energy ? ENERGY_NEEDS[r.energy] : null,
                       r.focus ? FOCUS_NEEDS[r.focus] : null,
+                      r.priority === "high" ? "High priority" : null,
+                      r.due_date && r.status === "active" ? `Due ${dueLabel(r.due_date)}` : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}

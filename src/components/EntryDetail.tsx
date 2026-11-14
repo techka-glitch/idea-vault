@@ -7,15 +7,21 @@ import {
   ENERGY_NEEDS,
   Entry,
   FOCUS_NEEDS,
+  dueLabel,
+  estimateLabel,
   Kind,
   KIND_LABEL,
   Level,
   LEVELS,
+  Priority,
   Status,
   Step,
+  STEP_TYPE_LABEL,
+  StepType,
   SUGGESTED_TAGS,
   TIME_OPTIONS,
   timeLabel,
+  waitLabel,
 } from "@/lib/types";
 
 const json = { "Content-Type": "application/json" };
@@ -26,12 +32,21 @@ type StepChange = {
   tags?: string[];
   energy?: Level | null;
   focus?: Level | null;
+  step_type?: StepType;
+  session_group?: string | null;
+  wait_minutes?: number | null;
+  repeatable?: boolean;
+  times_done?: number;
+  heads_up?: string | null;
 };
+
+type SharedStep = Step & { home?: { id: string; title: string } | null };
 
 export default function EntryDetail({ id }: { id: string }) {
   const router = useRouter();
   const [entry, setEntry] = useState<Entry | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
+  const [shared, setShared] = useState<SharedStep[]>([]);
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [tagText, setTagText] = useState("");
@@ -47,9 +62,10 @@ export default function EntryDetail({ id }: { id: string }) {
       setError("Could not find that one.");
       return;
     }
-    const { entry: e } = await res.json();
+    const { entry: e, shared: sh } = await res.json();
     setEntry(e);
     setSteps(e.steps ?? []);
+    setShared(sh ?? []);
     setTitle(e.title);
     setNotes(e.notes);
   }, [id]);
@@ -113,6 +129,11 @@ export default function EntryDetail({ id }: { id: string }) {
     if (await patch({ kind })) setEntry((e) => (e ? { ...e, kind } : e));
   }
 
+  async function setField(field: "priority" | "due_date", value: Priority | string | null) {
+    if (!entry) return;
+    if (await patch({ [field]: value })) setEntry({ ...entry, [field]: value });
+  }
+
   async function setSize(field: "minutes" | "energy" | "focus", value: number | Level | null) {
     if (!entry) return;
     const next = entry[field] === value ? null : value;
@@ -158,10 +179,13 @@ export default function EntryDetail({ id }: { id: string }) {
   }
 
   async function toggle(step: Step) {
-    setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, done: !x.done } : x)));
+    const flip = (done: boolean) => (x: Step) => (x.id === step.id ? { ...x, done } : x);
+    setSteps((s) => s.map(flip(!step.done)));
+    setShared((s) => s.map(flip(!step.done)));
     const res = await fetch(`/api/steps/${step.id}`, { method: "PATCH", headers: json, body: JSON.stringify({ done: !step.done }) });
     if (!res.ok) {
-      setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, done: step.done } : x)));
+      setSteps((s) => s.map(flip(step.done)));
+      setShared((s) => s.map(flip(step.done)));
       setError("Could not update that.");
     }
   }
@@ -169,9 +193,11 @@ export default function EntryDetail({ id }: { id: string }) {
   async function updateStep(step: Step, change: StepChange) {
     const before = step;
     setSteps((s) => s.map((x) => (x.id === step.id ? { ...x, ...change } : x)));
+    setShared((s) => s.map((x) => (x.id === step.id ? { ...x, ...change } : x)));
     const res = await fetch(`/api/steps/${step.id}`, { method: "PATCH", headers: json, body: JSON.stringify(change) });
     if (!res.ok) {
       setSteps((s) => s.map((x) => (x.id === step.id ? before : x)));
+      setShared((s) => s.map((x) => (x.id === step.id ? { ...before, home: (x as SharedStep).home } : x)));
       setError("Could not save that.");
     }
   }
@@ -201,6 +227,9 @@ export default function EntryDetail({ id }: { id: string }) {
 
   const remaining = steps.filter((s) => !s.done);
   const finished = steps.filter((s) => s.done);
+  const allSteps = [...steps, ...shared];
+  const doneCount = allSteps.filter((s) => s.done).length;
+  const partOf = (s: Step) => steps.findIndex((x) => x.id === s.id) + 1;
 
   return (
     <div className="pb-16">
@@ -210,7 +239,7 @@ export default function EntryDetail({ id }: { id: string }) {
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        {(["idea", "project", "list"] as Kind[]).map((k) => (
+        {(["idea", "project", "action", "list"] as Kind[]).map((k) => (
           <button
             key={k}
             onClick={() => setKind(k)}
@@ -308,14 +337,72 @@ export default function EntryDetail({ id }: { id: string }) {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs text-muted-purple">Tap a choice again to clear it.</p>
+          <p className="mt-2 text-xs text-muted-purple">
+            Tap a choice again to clear it. Times are rough estimates, so change them whenever you like.
+            {estimateLabel(entry.minutes, entry.minutes_max ?? null) && entry.minutes_max
+              ? ` Current estimate: ${estimateLabel(entry.minutes, entry.minutes_max)}.`
+              : ""}
+          </p>
+        </div>
+      )}
+
+      {entry.heads_up && (
+        <p className="card-shadow mb-5 rounded-2xl bg-gold px-4 py-3 text-sm font-semibold">{entry.heads_up}</p>
+      )}
+
+      {entry.kind !== "list" && (
+        <div className="card-shadow mb-5 rounded-2xl bg-white p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">Priority (optional)</p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(["high", "normal", "low"] as Priority[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setField("priority", entry.priority === p ? null : p)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                  entry.priority === p ? "bg-teal text-white" : "bg-pale-teal text-ink-soft"
+                }`}
+              >
+                {p === "high" ? "High" : p === "normal" ? "Normal" : "Low"}
+              </button>
+            ))}
+          </div>
+          <label htmlFor="entry-due" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-soft">
+            Real deadline (optional)
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id="entry-due"
+              type="date"
+              value={entry.due_date ?? ""}
+              onChange={(e) => setField("due_date", e.target.value || null)}
+              className="rounded-xl border border-deep-pale-pink bg-white px-3 py-2 text-base outline-none focus:border-hot-pink"
+            />
+            {entry.due_date && <span className="text-xs text-ink-soft">{dueLabel(entry.due_date)}</span>}
+          </div>
         </div>
       )}
 
       <h2 className="script-accent mb-2 text-2xl">{entry.kind === "list" ? "items" : "what's left"}</h2>
+      {entry.kind !== "list" && allSteps.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1 text-xs text-ink-soft">
+            {doneCount} of {allSteps.length} done
+          </p>
+          <div className="h-1.5 overflow-hidden rounded-full bg-pale-pink">
+            <div className="h-full bg-hot-pink" style={{ width: `${(doneCount / allSteps.length) * 100}%` }} />
+          </div>
+        </div>
+      )}
       <ul className="mb-3 space-y-2">
         {remaining.map((s) => (
-          <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} onUpdate={updateStep} />
+          <StepRow
+            key={s.id}
+            step={s}
+            part={entry.kind === "project" ? { n: partOf(s), of: steps.length } : null}
+            onToggle={toggle}
+            onRemove={removeStep}
+            onUpdate={updateStep}
+          />
         ))}
       </ul>
       <form onSubmit={addStep} className="mb-5 flex gap-2">
@@ -333,7 +420,34 @@ export default function EntryDetail({ id }: { id: string }) {
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-purple">Done</p>
           <ul className="mb-5 space-y-2">
             {finished.map((s) => (
-              <StepRow key={s.id} step={s} onToggle={toggle} onRemove={removeStep} onUpdate={updateStep} />
+              <StepRow
+                key={s.id}
+                step={s}
+                part={entry.kind === "project" ? { n: partOf(s), of: steps.length } : null}
+                onToggle={toggle}
+                onRemove={removeStep}
+                onUpdate={updateStep}
+              />
+            ))}
+          </ul>
+        </>
+      )}
+
+      {shared.length > 0 && (
+        <>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-purple">
+            Also needed here (done once, counts everywhere)
+          </p>
+          <ul className="mb-5 space-y-2">
+            {shared.map((s) => (
+              <li key={s.id}>
+                <StepRow step={s} part={null} onToggle={toggle} onRemove={removeStep} onUpdate={updateStep} readOnlyStructure />
+                {s.home && (
+                  <Link href={`/e/${s.home.id}`} className="ml-3 text-xs text-muted-purple underline">
+                    Lives in: {s.home.title}
+                  </Link>
+                )}
+              </li>
             ))}
           </ul>
         </>
@@ -395,19 +509,26 @@ export default function EntryDetail({ id }: { id: string }) {
 
 function StepRow({
   step,
+  part,
   onToggle,
   onRemove,
   onUpdate,
+  readOnlyStructure,
 }: {
   step: Step;
+  part: { n: number; of: number } | null;
   onToggle: (s: Step) => void;
   onRemove: (s: Step) => void;
   onUpdate: (s: Step, change: StepChange) => void;
+  readOnlyStructure?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [tagText, setTagText] = useState("");
   const [text, setText] = useState(step.text);
+  const [waitText, setWaitText] = useState(step.wait_minutes ? String(step.wait_minutes) : "");
+  const [groupText, setGroupText] = useState(step.session_group ?? "");
   const tags = step.tags ?? [];
+  const estimate = estimateLabel(step.minutes, step.minutes_max ?? null);
 
   function saveText() {
     const next = text.trim();
@@ -437,6 +558,7 @@ function StepRow({
           className="h-5 w-5 shrink-0 accent-[#eb518f]"
         />
         <span className={`min-w-0 flex-1 break-words text-base ${step.done ? "text-muted-purple line-through" : ""}`}>
+          {part && <span className="mr-1 text-xs font-semibold text-muted-purple">Part {part.n} of {part.of}.</span>}
           {step.text}
         </span>
         <button
@@ -451,9 +573,33 @@ function StepRow({
         </button>
       </div>
 
-      {!open && (step.minutes || step.energy || step.focus || tags.length > 0) && (
+      {step.heads_up && !step.done && (
+        <p className="mt-2 rounded-lg bg-gold px-3 py-1.5 text-xs font-semibold">{step.heads_up}</p>
+      )}
+
+      {step.repeatable && !step.done && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 pl-8">
+          <button
+            onClick={() => onUpdate(step, { times_done: (step.times_done ?? 0) + 1 })}
+            className="rounded-full bg-sage px-3 py-1 text-xs font-semibold"
+          >
+            I did a session
+          </button>
+          <span className="text-xs text-ink-soft">
+            {step.times_done > 0 ? `${step.times_done} so far. ` : ""}Check the box when this is completely finished.
+          </span>
+        </div>
+      )}
+
+      {!open && (estimate || step.wait_minutes || step.energy || step.focus || tags.length > 0 || step.step_type !== "independent" || step.due_date) && (
         <div className="mt-2 flex flex-wrap gap-1.5 pl-8">
-          {step.minutes && <span className="rounded-full bg-teal px-2.5 py-0.5 text-xs font-semibold text-white">{timeLabel(step.minutes)}</span>}
+          {estimate && <span className="rounded-full bg-teal px-2.5 py-0.5 text-xs font-semibold text-white">{estimate}</span>}
+          {step.wait_minutes ? <span className="rounded-full bg-gold px-2.5 py-0.5 text-xs">+ {waitLabel(step.wait_minutes)} waiting</span> : null}
+          {step.step_type === "sequential" && <span className="rounded-full bg-pale-sage px-2.5 py-0.5 text-xs">In order</span>}
+          {step.step_type === "same_session" && (
+            <span className="rounded-full bg-pale-sage px-2.5 py-0.5 text-xs">Same session{step.session_group ? `: ${step.session_group}` : ""}</span>
+          )}
+          {step.due_date && !step.done && <span className="rounded-full bg-gold px-2.5 py-0.5 text-xs">Due {dueLabel(step.due_date)}</span>}
           {step.energy && <span className="rounded-full bg-pale-pink px-2.5 py-0.5 text-xs">{ENERGY_NEEDS[step.energy]}</span>}
           {step.focus && <span className="rounded-full bg-pale-pink px-2.5 py-0.5 text-xs">{FOCUS_NEEDS[step.focus]}</span>}
           {tags.map((t) => (
@@ -557,6 +703,57 @@ function StepRow({
               <button className="rounded-xl bg-ink px-4 text-sm font-semibold text-white">Tag</button>
             </form>
           </div>
+          {!readOnlyStructure && (
+            <>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">When can it be done?</p>
+                <div className="flex flex-wrap gap-2">
+                  {(["independent", "sequential", "same_session"] as StepType[]).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => onUpdate(step, { step_type: t })}
+                      className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                        step.step_type === t ? "bg-teal text-white" : "bg-pale-teal text-ink-soft"
+                      }`}
+                    >
+                      {STEP_TYPE_LABEL[t]}
+                    </button>
+                  ))}
+                </div>
+                {step.step_type === "same_session" && (
+                  <input
+                    value={groupText}
+                    onChange={(e) => setGroupText(e.target.value)}
+                    onBlur={() => onUpdate(step, { session_group: groupText.trim() || null })}
+                    placeholder="Name the session these belong to"
+                    className="mt-2 w-full rounded-xl border border-deep-pale-pink bg-white px-3 py-2 text-base outline-none focus:border-hot-pink"
+                  />
+                )}
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                  Waiting time in minutes (drying, laundry, curing)
+                </p>
+                <input
+                  inputMode="numeric"
+                  value={waitText}
+                  onChange={(e) => setWaitText(e.target.value.replace(/\D/g, ""))}
+                  onBlur={() => onUpdate(step, { wait_minutes: waitText ? Number(waitText) : null })}
+                  placeholder="None"
+                  className="w-32 rounded-xl border border-deep-pale-pink bg-white px-3 py-2 text-base outline-none focus:border-hot-pink"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={step.repeatable}
+                  onChange={(e) => onUpdate(step, { repeatable: e.target.checked })}
+                  className="h-4 w-4 accent-[#eb518f]"
+                />
+                Repeatable (more than one session)
+              </label>
+            </>
+          )}
         </div>
       )}
     </li>
